@@ -3,8 +3,35 @@
 #include <ArduinoJson.h>
 #include <stdint.h>
 #include <EEPROM.h>
+#include <YoutubeApi.h>
 
-#define EEPROM_SIZE 6 //0=roll, 1=nastavenaprodleva, 2=sourceState, 3=sat, 4=resetwifi, 5=mode(heal)
+#define EEPROM_SIZE 56 // 0=roll, 1=nastavenaprodleva, 2=sourceState, 3=sat, 4=resetwifi, 5=mode(heal), 6-55 channel id
+
+#define API_KEY "AIzaSyB8Go75wpPsyqrEmdHuoXuA37e-t4NtxXk"
+#define CHANNEL_ID "UCUOdfQRcjRt-q3mh_kUWFNw"
+
+const char *test_root_ca =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIDdTCCAl2gAwIBAgILBAAAAAABFUtaw5QwDQYJKoZIhvcNAQEFBQAwVzELMAkG\n"
+    "A1UEBhMCQkUxGTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2ExEDAOBgNVBAsTB1Jv\n"
+    "b3QgQ0ExGzAZBgNVBAMTEkdsb2JhbFNpZ24gUm9vdCBDQTAeFw05ODA5MDExMjAw\n"
+    "MDBaFw0yODAxMjgxMjAwMDBaMFcxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9i\n"
+    "YWxTaWduIG52LXNhMRAwDgYDVQQLEwdSb290IENBMRswGQYDVQQDExJHbG9iYWxT\n"
+    "aWduIFJvb3QgQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDaDuaZ\n"
+    "jc6j40+Kfvvxi4Mla+pIH/EqsLmVEQS98GPR4mdmzxzdzxtIK+6NiY6arymAZavp\n"
+    "xy0Sy6scTHAHoT0KMM0VjU/43dSMUBUc71DuxC73/OlS8pF94G3VNTCOXkNz8kHp\n"
+    "1Wrjsok6Vjk4bwY8iGlbKk3Fp1S4bInMm/k8yuX9ifUSPJJ4ltbcdG6TRGHRjcdG\n"
+    "snUOhugZitVtbNV4FpWi6cgKOOvyJBNPc1STE4U6G7weNLWLBYy5d4ux2x8gkasJ\n"
+    "U26Qzns3dLlwR5EiUWMWea6xrkEmCMgZK9FGqkjWZCrXgzT/LCrBbBlDSgeF59N8\n"
+    "9iFo7+ryUp9/k5DPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8E\n"
+    "BTADAQH/MB0GA1UdDgQWBBRge2YaRQ2XyolQL30EzTSo//z9SzANBgkqhkiG9w0B\n"
+    "AQUFAAOCAQEA1nPnfE920I2/7LqivjTFKDK1fPxsnCwrvQmeU79rXqoRSLblCKOz\n"
+    "yj1hTdNGCbM+w6DjY1Ub8rrvrTnhQ7k4o+YviiY776BQVvnGCv04zcQLcFGUl5gE\n"
+    "38NflNUVyRRBnMRddWQVDf9VMOyGj/8N7yy5Y0b2qvzfvGn9LhJIZJrglfCm7ymP\n"
+    "AbEVtQwdpf5pLGkkeB6zpxxxYu7KyJesF12KwvhHhm4qxFYxldBniYUr+WymXUad\n"
+    "DKqC5JlR3XC321Y9YeRq4VzW9v493kHMB65jUr9TU/Qr6cf9tveCX4XSQRjbgbME\n"
+    "HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==\n"
+    "-----END CERTIFICATE-----\n";
 
 WiFiServer server(80);
 
@@ -13,42 +40,51 @@ int clockPin = 25;
 int dataPin = 27;
 int hvPin = 33;
 int oldValue;
-int errorCount = 0; //if connection is lost, shows 000000-999999
+int errorCount = 0; // if connection is lost, shows 000000-999999
 
 int timeoutTime = 2000;
 bool roll, sat = 0;
-byte mode = 0; //0=normal, 1=heal;
+byte mode = 0; // 0=normal, 1=heal;
 String sourceState;
+String channel_ID;
 
 String header;
+String body;
 
 uint32_t millisTime = 40000, lastHTTP = 0, lastRotate = 0, lastClient = 0;
 int waitTimeRotate = 180000, waitTimeHTTP, setWaitTimeHTTP;
 double value;
 
-int digits[10] = {0b0000000001,  //0
-                  0b1000000000,  //1
-                  0b0100000000,  //2
-                  0b0010000000,  //3
-                  0b0001000000,  //4
-                  0b0000100000,  //5
-                  0b0000010000,  //6
-                  0b0000001000,  //7
-                  0b0000000100,  //8
-                  0b0000000010}; //9
+int digits[10] = {0b0000000001,  // 0
+                  0b1000000000,  // 1
+                  0b0100000000,  // 2
+                  0b0010000000,  // 3
+                  0b0001000000,  // 4
+                  0b0000100000,  // 5
+                  0b0000010000,  // 6
+                  0b0000001000,  // 7
+                  0b0000000100,  // 8
+                  0b0000000010}; // 9
 
-void nixie(int, bool); //number, rotate
-void rotate(int, int); //count, delay in ms
+void nixie(int, bool); // number, rotate
+void rotate(int, int); // count, delay in ms
 void settingsPage(void);
+
+bool getBinanceBTC();
+bool getBinanceETH();
+bool getCoindeskBTC();
+bool getBlockHeight();
+bool getTikTokFollowers();
+bool getYoutubeSubs();
 
 void setup()
 {
   int intip;
 
-  pinMode(27, OUTPUT); //ser data
-  pinMode(26, OUTPUT); //latch
-  pinMode(25, OUTPUT); //clk
-  pinMode(33, OUTPUT); //HV enable, active LOW
+  pinMode(27, OUTPUT); // ser data
+  pinMode(26, OUTPUT); // latch
+  pinMode(25, OUTPUT); // clk
+  pinMode(33, OUTPUT); // HV enable, active LOW
   EEPROM.begin(EEPROM_SIZE);
   WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP
 
@@ -91,21 +127,47 @@ void setup()
   case 2:
     sourceState = "Binance - ETH/USDT";
     break;
+  case 3:
+    sourceState = "Block Height";
+    break;
+  case 4:
+    sourceState = "TikTok Followers";
+    break;
+  case 5:
+    sourceState = "Youtube Subs";
+    break;
   default:
     sourceState = "Binance - BTC/USDT";
   }
 
   sat = EEPROM.read(3);
-  
+
   mode = EEPROM.read(5);
-  if (mode<0 || mode >2)
-  mode = 0;
+  if (mode < 0 || mode > 2)
+    mode = 0;
+
+  int EEPROMaddress = 6;
+  char readChar = 'A';
+  channel_ID = "";
+
+  while (readChar != '\0')
+  {
+    Serial.print("Reading ");
+    readChar = EEPROM.read(EEPROMaddress);
+    if (readChar != '\0')
+    {
+      channel_ID += readChar;
+    }
+    EEPROMaddress++;
+  }
+
+  Serial.println(channel_ID);
 
   WiFiManager wm;
 
   if (EEPROM.read(4) == 1)
   {
-    wm.resetSettings(); //wipe credentials
+    wm.resetSettings(); // wipe credentials
     EEPROM.write(4, 0);
     EEPROM.commit();
     nixie(654321, 0);
@@ -116,7 +178,7 @@ void setup()
   wm.setConfigPortalTimeout(120);
   digitalWrite(hvPin, HIGH);
   bool res;
-  res = wm.autoConnect("NixieTicker");
+  res = wm.autoConnect("NX Ticker");
 
   if (!res)
   {
@@ -150,16 +212,16 @@ void loop()
 {
   settingsPage();
 
-  if (mode == 2) //test
+  if (mode == 2) // test
   {
     rotate(1, 3000);
     mode = 0;
   }
-  else if (mode == 1) //heal
+  else if (mode == 1) // heal
   {
     rotate(1, 1000);
   }
-  else //normal
+  else // normal
   {
     if (millisTime - lastRotate > waitTimeRotate)
     {
@@ -172,44 +234,22 @@ void loop()
     {
       lastHTTP = millisTime;
       Serial.println("HTTP begin");
-      HTTPClient http;
+      bool returned = 1;
       if (sourceState == "Binance - BTC/USDT")
-        http.begin("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
+        returned = getBinanceBTC();
       else if (sourceState == "Coindesk - BTC/USD")
-        http.begin("https://api.coindesk.com/v1/bpi/currentprice.json");
+        returned = getCoindeskBTC();
       else if (sourceState == "Binance - ETH/USDT")
-        http.begin("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT");
+        returned = getBinanceETH();
+      else if (sourceState == "Block Height")
+        returned = getBlockHeight();
+      else if (sourceState == "TikTok Followers")
+        returned = getTikTokFollowers();
+      else if (sourceState == "Youtube Subs")
+        returned = getYoutubeSubs();
 
-      int httpCode = http.GET();
-
-      if (httpCode == 200)
+      if (returned == 0)
       {
-        Serial.println(httpCode);
-
-        const size_t capacity = JSON_ARRAY_SIZE(1) + JSON_ARRAY_SIZE(3) + JSON_OBJECT_SIZE(1) + 2 * JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(3) + 2 * JSON_OBJECT_SIZE(6) + 2 * JSON_OBJECT_SIZE(7) + 590;
-        DynamicJsonDocument doc(capacity);
-        String payload = http.getString();
-        const char *json = payload.c_str();
-
-        deserializeJson(doc, json);
-        if (sourceState == "Coindesk - BTC/USD")
-        {
-          JsonObject bpi = doc["bpi"];
-          JsonObject bpi_USD = bpi["USD"];
-          value = bpi_USD["rate_float"];
-        }
-        else if (sourceState == "Binance - BTC/USDT")
-        {
-          value = doc["price"];
-        }
-        else if (sourceState == "Binance - ETH/USDT")
-        {
-          value = doc["price"];
-        }
-
-        if (sat == 1 && sourceState != "Binance - ETH/USDT")
-          value = 100000000 / value;
-
         Serial.println(value, 0);
         nixie(value, roll);
         waitTimeHTTP = setWaitTimeHTTP;
@@ -218,16 +258,12 @@ void loop()
       else
       {
         Serial.println("Error on HTTP request");
-        Serial.print("Code:");
-        Serial.println(httpCode);
         if (errorCount > 999999)
           ESP.restart();
         nixie(errorCount, 0);
         errorCount = errorCount + 111111;
         waitTimeHTTP = 10000;
       }
-
-      http.end();
     }
     millisTime = millis();
   }
@@ -236,8 +272,8 @@ void loop()
 void nixie(int number, bool rolling)
 {
   int stot, dest, tis, sto, des, jed;
-  byte r[8];             //shift registers
-  if (number >= 1000000) //if number is bigger than 1 000 000, shows only last 6 digits. Better solution would be shift number from left to right
+  byte r[8];             // shift registers
+  if (number >= 1000000) // if number is bigger than 1 000 000, shows only last 6 digits. Better solution would be to shift number from left to right
     number = number % 1000000;
   do
   {
@@ -315,6 +351,8 @@ void rotate(int rotateCount, int rotateDelay)
 void settingsPage()
 {
   WiFiClient client = server.available();
+  int index = 0;
+  int addres = 0;
 
   if (client)
   {
@@ -411,6 +449,30 @@ void settingsPage()
               Serial.println(sourceState);
               lastHTTP = lastHTTP - 60000;
             }
+            else if (header.indexOf("GET /block-height") >= 0)
+            {
+              sourceState = "Block Height";
+              EEPROM.write(2, 3);
+              EEPROM.commit();
+              Serial.println(sourceState);
+              lastHTTP = lastHTTP - 60000;
+            }
+            else if (header.indexOf("GET /tiktok") >= 0)
+            {
+              sourceState = "TikTok Followers";
+              EEPROM.write(2, 4);
+              EEPROM.commit();
+              Serial.println(sourceState);
+              lastHTTP = lastHTTP - 60000;
+            }
+            else if (header.indexOf("GET /youtube") >= 0)
+            {
+              sourceState = "Youtube Subs";
+              EEPROM.write(2, 5);
+              EEPROM.commit();
+              Serial.println(sourceState);
+              lastHTTP = lastHTTP - 60000;
+            }
             else if (header.indexOf("GET /sat") >= 0)
             {
               sat = 1;
@@ -423,7 +485,7 @@ void settingsPage()
               sat = 0;
               EEPROM.write(3, 0);
               EEPROM.commit();
-              lastHTTP = lastHTTP - 60000;
+              lastHTTP = lastHTTP - 60000; // update displayed value now
             }
             else if (header.indexOf("GET /resetwifi") >= 0)
             {
@@ -448,6 +510,46 @@ void settingsPage()
             {
               mode = 2;
             }
+            else if (header.indexOf("POST /submit") >= 0)
+            {
+              while (client.available())
+              {
+                c = client.read();
+                body += c;
+              }
+
+              if (body.indexOf("channel_ID") >= 0)
+              {
+                index = body.indexOf("=");
+                if (index != -1)
+                {
+                  String newChannel_ID = body.substring(index + 1);
+                  if (newChannel_ID.length() < 50 && newChannel_ID.length() > 5)
+                  {
+                    channel_ID = newChannel_ID;
+                    addres = 6;
+                    for (int i = 0; i < channel_ID.length(); i++)
+                    {
+                      EEPROM.write(addres, channel_ID[i]);
+                      addres++;
+                    }
+                    EEPROM.write(addres, '\0');
+                    EEPROM.commit();
+                  }
+                  else
+                  {
+                    Serial.println("channel ID is too long or too short");
+                  }
+                }
+                else
+                  Serial.println("channel ID not found");
+              }
+              body = "";
+            }
+            else
+            {
+              Serial.println("wtf did you send me?");
+            }
 
             waitTimeHTTP = setWaitTimeHTTP;
 
@@ -459,7 +561,7 @@ void settingsPage()
             client.println("<style>html { font-family: 'Helvetica'; display: inline-block; margin: 0px auto; text-align: center; background-color:#000000; color:#FFFFFF}");
             client.println(".button { background-color: #202020; width: 320px; border: 2px solid #666666; border-radius: 20px; color: white; padding: 12px; font-size: 30px; margin: 2px; cursor: pointer;}");
             client.println(".button2 {border: 2px solid #FF9900;}");
-            client.println(".button3 {width: 160px;}");
+            client.println(".button3 {width: 155px;}");
             client.println(".button4 {border: 2px solid #FF0000;}");
 
             client.println(".dropdown {position: relative; display: inline-block;}");
@@ -467,11 +569,12 @@ void settingsPage()
             client.println(".dropdown-content a {color: #FFFFFF; padding: 12px 16px; text-decoration: none; display: block; }");
             client.println(".dropdown-content a:hover {background-color: #000000; border-radius: 20px;}");
             client.println(".dropdown:hover .dropdown-content {display: block;}");
+            client.println(".input { background-color: #202020; border: 2px solid #666666; border-radius: 20px; color: white; padding: 12px; font-size: 30px; width: 295px; margin: 2px; outline: none;}");
             client.println("h1{font-family: 'Courier New', monospace; font-size: 45px}");
 
             client.println("</style></head>");
 
-            client.println("<body><h1>NixieTicker</h1>");
+            client.println("<body><h1>NX Ticker</h1>");
 
             if (roll == 0)
               client.println("<p><a href=\"/rollovat\"><button class=\"button\">Roll : OFF</button></a></p>");
@@ -482,18 +585,28 @@ void settingsPage()
             client.print(setWaitTimeHTTP / 1000);
             client.println("s</button> <div class=\"dropdown-content\">   <a href=\"/prodleva/2s\">2 sec</a> <a href=\"/prodleva/5s\">5 sec</a>   <a href=\"/prodleva/10s\">10 sec</a>   <a href=\"/prodleva/30s\">30 sec</a>  <a href=\"/prodleva/1min\">1 min</a> </div></div></p>");
 
-            client.println("<p><div class=\"dropdown\">  <button class=\"button button2\">Price Source</button> <div class=\"dropdown-content\">   <a href=\"/coindesk-btcusd\">Coindesk - BTC/USD</a> <a href=\"/binance-btcusdt\">Binance - BTC/USDT (fast)</a><a href=\"/binance-ethusdt\">Binance - ETH/USDT (fast)</a> </div></div></p>");
-            client.println("<p>Current price soucre: " + sourceState + "</p>");
+            client.println("<p><div class=\"dropdown\">  <button class=\"button button2\">Data Source</button> <div class=\"dropdown-content\">   <a href=\"/coindesk-btcusd\">Coindesk - BTC/USD</a> <a href=\"/binance-btcusdt\">Binance - BTC/USDT (fast)</a><a href=\"/binance-ethusdt\">Binance - ETH/USDT (fast)</a> <a href=\"/block-height\">Block Height</a> <a href=\"/tiktok\">TikTok Followers</a> <a href=\"/youtube\">Youtube Subs</a> </div></div></p>");
+            client.println("<p>Current data soucre: " + sourceState + "</p>");
+
+            if (sourceState == "Youtube Subs")
+            {
+              client.println("<p>Current Channel id is:<br>" + channel_ID + "</p>");
+              client.println("<form method='post' action='/submit'>");
+              client.println("<input class='input' type='text' name='channel_ID' placeholder='New channel ID'><p></p>");
+              client.println("<input class='button' type='submit' value='Send'>");
+              client.println("</form>");
+            }
+
             if (sourceState == "Coindesk - BTC/USD")
               client.println("<p>Coindesk only updates once per minute</p>");
 
-            if (sourceState != "Binance - ETH/USDT")
+            if (sourceState == "Binance - BTC/USDT" || sourceState == "Coindesk - BTC/USD")
             {
-              if (sat == 0) //btc
+              if (sat == 0) // btc
               {
                 client.println("<button class=\"button button2 button3\">BTC/USD</button><a href=\"/sat\"><button class=\"button button3\">USD/sat</button></a></p>");
               }
-              else //sat
+              else // sat
               {
                 client.println("<a href=\"/btc\"><button class=\"button button3\">BTC/USD</button></a><button class=\"button button3 button2\">USD/sat</button></p>");
               }
@@ -506,7 +619,7 @@ void settingsPage()
             client.println("<a href=\"/test\"><button class=\"button button2 button3\">Test</button></a>");
 
             client.println("<br><br><br><br><br><br><p><a onclick=\"myFunction()\"><button class=\"button button4\">RESET WIFI</button></a></p>");
-            client.println("<p id=\"demo\"></p><script>function myFunction() { var str = \"CONFIRM RESET\"; var result = str.link(\"/resetwifi\"); document.getElementById(\"demo\").innerHTML = result;}</script>");
+            client.println("<p id=\"reset\"></p><script>function myFunction() { var str = \"CONFIRM RESET\"; var result = str.link(\"/resetwifi\"); document.getElementById(\"reset\").innerHTML = result;}</script>");
             client.println("<p>(This will erase saved wifi credentials)</p>");
 
             client.println("</body></html>");
@@ -531,5 +644,134 @@ void settingsPage()
     header = "";
     // Close the connection
     client.stop();
+  }
+}
+
+bool getBinanceBTC()
+{
+  HTTPClient http;
+  http.begin("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
+  int httpCode = http.GET();
+  Serial.println(httpCode);
+
+  if (httpCode == 200)
+  {
+    String payload = http.getString();
+    DynamicJsonDocument doc(256);
+    const char *json = payload.c_str();
+    deserializeJson(doc, json);
+    value = doc["price"];
+
+    if (sat == 1)
+      value = 100000000 / value;
+    http.end();
+    return 0;
+  }
+  else
+  {
+    http.end();
+    return 1;
+  }
+}
+
+bool getBinanceETH()
+{
+  HTTPClient http;
+  http.begin("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT");
+  int httpCode = http.GET();
+  Serial.println(httpCode);
+
+  if (httpCode == 200)
+  {
+    String payload = http.getString();
+    DynamicJsonDocument doc(256);
+    const char *json = payload.c_str();
+    deserializeJson(doc, json);
+    value = doc["price"];
+    http.end();
+    return 0;
+  }
+  else
+  {
+    http.end();
+    return 1;
+  }
+}
+
+bool getCoindeskBTC()
+{
+  HTTPClient http;
+  http.begin("https://api.coindesk.com/v1/bpi/currentprice.json");
+  int httpCode = http.GET();
+
+  if (httpCode == 200)
+  {
+    String payload = http.getString();
+    const size_t capacity = JSON_ARRAY_SIZE(1) + JSON_ARRAY_SIZE(3) + JSON_OBJECT_SIZE(1) + 2 * JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(3) + 2 * JSON_OBJECT_SIZE(6) + 2 * JSON_OBJECT_SIZE(7) + 590;
+    Serial.println(capacity);
+    DynamicJsonDocument doc(capacity);
+    const char *json = payload.c_str();
+    deserializeJson(doc, json);
+
+    JsonObject bpi = doc["bpi"];
+    JsonObject bpi_USD = bpi["USD"];
+    value = bpi_USD["rate_float"];
+
+    if (sat == 1)
+      value = 100000000 / value;
+
+    http.end();
+    return 0;
+  }
+  else
+  {
+    http.end();
+    return 1;
+  }
+}
+
+bool getBlockHeight()
+{
+  HTTPClient http;
+  http.begin("https://mempool.space/api/blocks/tip/height");
+  int httpCode = http.GET();
+  Serial.println(httpCode);
+
+  if (httpCode == 200)
+  {
+    String payload = http.getString();
+    value = payload.toInt();
+    http.end();
+    return 0;
+  }
+  else
+  {
+    http.end();
+    return 1;
+  }
+}
+
+bool getTikTokFollowers()
+{
+  value = 123456;
+  return 0;
+}
+
+bool getYoutubeSubs()
+{
+  WiFiClientSecure client;
+  client.setCACert(test_root_ca);
+  YoutubeApi api(API_KEY, client);
+
+  if (api.getChannelStatistics(channel_ID))
+  {
+    value = api.channelStats.subscriberCount;
+    client.stop();
+    return 0;
+  }
+  else
+  {
+    client.stop();
+    return 1;
   }
 }
