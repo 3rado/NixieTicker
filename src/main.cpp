@@ -210,6 +210,7 @@ void setup()
 
 void loop()
 {
+  Serial.println(WiFi.RSSI());
   settingsPage();
 
   if (mode == 2) // test
