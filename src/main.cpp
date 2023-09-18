@@ -4,11 +4,11 @@
 #include <stdint.h>
 #include <EEPROM.h>
 #include <YoutubeApi.h>
+#include <api_key.h>
 
 #define EEPROM_SIZE 56 // 0=roll, 1=nastavenaprodleva, 2=sourceState, 3=sat, 4=resetwifi, 5=mode(heal), 6-55 channel id
 
-#define API_KEY "AIzaSyB8Go75wpPsyqrEmdHuoXuA37e-t4NtxXk"
-#define CHANNEL_ID "UCUOdfQRcjRt-q3mh_kUWFNw"
+// #define API_KEY "AIzaSyB8Go75wpPsyqrEmdHuoXuA37e-t4NtxXk"
 
 const char *test_root_ca =
     "-----BEGIN CERTIFICATE-----\n"
@@ -210,7 +210,6 @@ void setup()
 
 void loop()
 {
-  Serial.println(WiFi.RSSI());
   settingsPage();
 
   if (mode == 2) // test
@@ -234,7 +233,10 @@ void loop()
     if (millisTime - lastHTTP > waitTimeHTTP)
     {
       lastHTTP = millisTime;
+      Serial.print("Wifi signal: ");
+      Serial.println(WiFi.RSSI());
       Serial.println("HTTP begin");
+      
       bool returned = 1;
       if (sourceState == "Binance - BTC/USDT")
         returned = getBinanceBTC();
@@ -762,7 +764,7 @@ bool getYoutubeSubs()
 {
   WiFiClientSecure client;
   client.setCACert(test_root_ca);
-  YoutubeApi api(API_KEY, client);
+  YoutubeApi api(youtubeApiKey, client);
 
   if (api.getChannelStatistics(channel_ID))
   {
