@@ -50,4 +50,10 @@ Pictures will be added
 
   
 
-### 3) Connect Nixies and power Supply
+### 3) Connect Nixies and power Supply  
+## Preparing SW
+1) Clone this repo to your PC
+2) Open it with Code
+3) If you want to use Youtube Subs feature, you need to get youtube API key https://www.youtube.com/watch?v=N18czV5tj5o
+4) In folder src open file main.h and add your API key here: const char* youtubeApiKey = "YOUR API KEY"; 
+6) Connect your ESP and hit upload!
