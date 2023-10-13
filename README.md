@@ -12,7 +12,8 @@ ESP32 WROOM
 ## Software requirements
 VS Code with Platformio extension
 
-## Preparing HW
+## Preparing HW  
+We will use ESP32 instead of onboard microcontroller from nixie board.
 ### 1) Desolder microcontroller from Nixie Clock Board  
    Pictures will be added  
    Protect other parts of the board when using the heat gun, otherwise it will melt.  
