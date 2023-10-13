@@ -51,7 +51,7 @@ Pictures will be added
 
   
 
-### 3) Connect Nixies and power Supply  
+### 3) Connect nixie tubes and power supply to nixie board  
 ## Preparing SW
 1) Clone this repo to your PC
 2) Open it with Code
