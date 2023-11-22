@@ -7,9 +7,9 @@
 //#include <api_key.h>
 
 #define EEPROM_SIZE 56 // 0=roll, 1=nastavenaprodleva, 2=sourceState, 3=sat, 4=resetwifi, 5=mode(heal), 6-55 channel id
-const char* youtubeApiKey = "YOUR API KEY"; 
+// const char* youtubeApiKey = "YOUR API KEY";
 
-const char *test_root_ca =
+const char *yt_root_ca =
     "-----BEGIN CERTIFICATE-----\n"
     "MIIDdTCCAl2gAwIBAgILBAAAAAABFUtaw5QwDQYJKoZIhvcNAQEFBQAwVzELMAkG\n"
     "A1UEBhMCQkUxGTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2ExEDAOBgNVBAsTB1Jv\n"
@@ -31,6 +31,7 @@ const char *test_root_ca =
     "DKqC5JlR3XC321Y9YeRq4VzW9v493kHMB65jUr9TU/Qr6cf9tveCX4XSQRjbgbME\n"
     "HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==\n"
     "-----END CERTIFICATE-----\n";
+
 
 WiFiServer server(80);
 
@@ -73,7 +74,6 @@ bool getBinanceBTC();
 bool getBinanceETH();
 bool getCoindeskBTC();
 bool getBlockHeight();
-bool getTikTokFollowers();
 bool getYoutubeSubs();
 
 void setup()
@@ -130,9 +130,6 @@ void setup()
     sourceState = "Block Height";
     break;
   case 4:
-    sourceState = "TikTok Followers";
-    break;
-  case 5:
     sourceState = "Youtube Subs";
     break;
   default:
@@ -235,7 +232,7 @@ void loop()
       Serial.print("Wifi signal: ");
       Serial.println(WiFi.RSSI());
       Serial.println("HTTP begin");
-      
+
       bool returned = 1;
       if (sourceState == "Binance - BTC/USDT")
         returned = getBinanceBTC();
@@ -245,8 +242,6 @@ void loop()
         returned = getBinanceETH();
       else if (sourceState == "Block Height")
         returned = getBlockHeight();
-      else if (sourceState == "TikTok Followers")
-        returned = getTikTokFollowers();
       else if (sourceState == "Youtube Subs")
         returned = getYoutubeSubs();
 
@@ -459,18 +454,10 @@ void settingsPage()
               Serial.println(sourceState);
               lastHTTP = lastHTTP - 60000;
             }
-            else if (header.indexOf("GET /tiktok") >= 0)
-            {
-              sourceState = "TikTok Followers";
-              EEPROM.write(2, 4);
-              EEPROM.commit();
-              Serial.println(sourceState);
-              lastHTTP = lastHTTP - 60000;
-            }
             else if (header.indexOf("GET /youtube") >= 0)
             {
               sourceState = "Youtube Subs";
-              EEPROM.write(2, 5);
+              EEPROM.write(2, 4);
               EEPROM.commit();
               Serial.println(sourceState);
               lastHTTP = lastHTTP - 60000;
@@ -587,7 +574,7 @@ void settingsPage()
             client.print(setWaitTimeHTTP / 1000);
             client.println("s</button> <div class=\"dropdown-content\">   <a href=\"/prodleva/2s\">2 sec</a> <a href=\"/prodleva/5s\">5 sec</a>   <a href=\"/prodleva/10s\">10 sec</a>   <a href=\"/prodleva/30s\">30 sec</a>  <a href=\"/prodleva/1min\">1 min</a> </div></div></p>");
 
-            client.println("<p><div class=\"dropdown\">  <button class=\"button button2\">Data Source</button> <div class=\"dropdown-content\">   <a href=\"/coindesk-btcusd\">Coindesk - BTC/USD</a> <a href=\"/binance-btcusdt\">Binance - BTC/USDT (fast)</a><a href=\"/binance-ethusdt\">Binance - ETH/USDT (fast)</a> <a href=\"/block-height\">Block Height</a> <a href=\"/tiktok\">TikTok Followers</a> <a href=\"/youtube\">Youtube Subs</a> </div></div></p>");
+            client.println("<p><div class=\"dropdown\">  <button class=\"button button2\">Data Source</button> <div class=\"dropdown-content\">   <a href=\"/coindesk-btcusd\">Coindesk - BTC/USD</a> <a href=\"/binance-btcusdt\">Binance - BTC/USDT (fast)</a><a href=\"/binance-ethusdt\">Binance - ETH/USDT (fast)</a> <a href=\"/block-height\">Block Height</a> <a href=\"/youtube\">Youtube Subs</a> </div></div></p>");
             client.println("<p>Current data soucre: " + sourceState + "</p>");
 
             if (sourceState == "Youtube Subs")
@@ -753,16 +740,10 @@ bool getBlockHeight()
   }
 }
 
-bool getTikTokFollowers()
-{
-  value = 123456;
-  return 0;
-}
-
 bool getYoutubeSubs()
 {
   WiFiClientSecure client;
-  client.setCACert(test_root_ca);
+  client.setCACert(yt_root_ca);
   YoutubeApi api(youtubeApiKey, client);
 
   if (api.getChannelStatistics(channel_ID))
