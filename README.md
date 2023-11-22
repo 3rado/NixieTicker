@@ -12,7 +12,8 @@ ESP32 WROOM
 ## Software requirements
 VS Code with Platformio extension
 
-## Preparing HW
+## Preparing HW  
+We will use ESP32 instead of onboard microcontroller from nixie board.
 ### 1) Desolder microcontroller from Nixie Clock Board  
    Pictures will be added  
    Protect other parts of the board when using the heat gun, otherwise it will melt.  
@@ -50,4 +51,10 @@ Pictures will be added
 
   
 
-### 3) Connect Nixies and power Supply
+### 3) Connect nixie tubes and power supply to nixie board  
+## Preparing SW
+1) Clone this repo to your PC
+2) Open it with Code
+3) If you want to use Youtube Subs feature, you need to get youtube API key https://www.youtube.com/watch?v=N18czV5tj5o
+4) In folder src open file main.h and add your API key here: const char* youtubeApiKey = "YOUR API KEY"; 
+6) Connect your ESP and hit upload!
