@@ -4,10 +4,12 @@
 #include <stdint.h>
 #include <EEPROM.h>
 #include <YoutubeApi.h>
-//#include <api_key.h>
+#include <api_key.h>
 
-#define EEPROM_SIZE 56 // 0=roll, 1=nastavenaprodleva, 2=sourceState, 3=sat, 4=resetwifi, 5=mode(heal), 6-55 channel id
-// const char* youtubeApiKey = "YOUR API KEY";
+#define EEPROM_SIZE 58 // 0=roll, 1=nastavenaprodleva, 2=sourceState, 3=sat, 4=resetwifi, 5=mode(heal), 6-55 channel id, 56 LED, 57 radar
+
+// ADD YOUR YOUTUBE API KEY HERE
+//  const char* youtubeApiKey = "YOUR API KEY";
 
 const char *yt_root_ca =
     "-----BEGIN CERTIFICATE-----\n"
@@ -32,18 +34,23 @@ const char *yt_root_ca =
     "HMUfpIBvFSDJ3gyICh3WZlXi/EjJKSZp4A==\n"
     "-----END CERTIFICATE-----\n";
 
-
 WiFiServer server(80);
+
+bool radarInstalled = 1;
+bool LEDinstalled = 0;
 
 int latchPin = 26;
 int clockPin = 25;
 int dataPin = 27;
 int hvPin = 33;
+int LEDpin = 32;
+int radarPin = 35;
 int oldValue;
 int errorCount = 0; // if connection is lost, shows 000000-999999
 
 int timeoutTime = 2000;
-bool roll, sat = 0;
+bool roll, sat, LED, radarEnabled = 1;
+bool detection = 0;
 byte mode = 0; // 0=normal, 1=heal;
 String sourceState;
 String channel_ID;
@@ -51,8 +58,8 @@ String channel_ID;
 String header;
 String body;
 
-uint32_t millisTime = 40000, lastHTTP = 0, lastRotate = 0, lastClient = 0;
-int waitTimeRotate = 180000, waitTimeHTTP, setWaitTimeHTTP;
+uint32_t millisTime = 0, lastHTTP = 0, lastRotate = 0, lastDetected = 0, lastClient = 0;
+int waitTimeRotate = 120000, waitTimeHTTP, setWaitTimeHTTP, detectionTimeout = 180000, sleepRotations = 30;
 double value;
 
 int digits[10] = {0b0000000001,  // 0
@@ -68,6 +75,8 @@ int digits[10] = {0b0000000001,  // 0
 
 void nixie(int, bool); // number, rotate
 void rotate(int, int); // count, delay in ms
+void rotate2(int rotateCount, int rotateDelay);
+void rotate3(int rotateCount, int rotateDelay);
 void settingsPage(void);
 
 bool getBinanceBTC();
@@ -80,17 +89,20 @@ void setup()
 {
   int intip;
 
-  pinMode(27, OUTPUT); // ser data
-  pinMode(26, OUTPUT); // latch
-  pinMode(25, OUTPUT); // clk
-  pinMode(33, OUTPUT); // HV enable, active LOW
+  pinMode(dataPin, OUTPUT);  // ser data
+  pinMode(latchPin, OUTPUT); // latch
+  pinMode(clockPin, OUTPUT); // clk
+  pinMode(hvPin, OUTPUT);    // HV enable, active LOW
+  pinMode(LEDpin, OUTPUT);   // LED
+  pinMode(radarPin, INPUT);
+
   EEPROM.begin(EEPROM_SIZE);
   WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP
 
   digitalWrite(hvPin, LOW);
-
+  value = 0;
   Serial.begin(115200);
-  rotate(10, 10);
+  rotate3(5, 33);
 
   roll = EEPROM.read(0);
 
@@ -159,6 +171,9 @@ void setup()
 
   Serial.println(channel_ID);
 
+  LED = EEPROM.read(56);
+  LED = EEPROM.read(57);
+
   WiFiManager wm;
 
   if (EEPROM.read(4) == 1)
@@ -171,7 +186,7 @@ void setup()
 
   wm.setClass("invert");
   wm.setHostname("Nixie");
-  wm.setConfigPortalTimeout(120);
+  wm.setConfigPortalTimeout(180);
   digitalWrite(hvPin, HIGH);
   bool res;
   res = wm.autoConnect("NX Ticker");
@@ -207,6 +222,40 @@ void setup()
 void loop()
 {
   settingsPage();
+  digitalWrite(LEDpin, LED);
+
+  if (radarInstalled && radarEnabled)
+  {
+    if (digitalRead(radarPin) == 1)
+    {
+      lastDetected = millisTime;
+      Serial.println(lastDetected);
+    }
+    if (millisTime - lastDetected > detectionTimeout)
+    {
+      digitalWrite(LEDpin, LOW);
+      while (digitalRead(radarPin) == 0)
+      {
+        if (sleepRotations > 0)
+        {
+          rotate(1, 100);
+          sleepRotations--;
+        }
+        else
+        {
+          digitalWrite(hvPin, HIGH);
+          delay(200);
+        }
+        settingsPage();
+      }
+      sleepRotations = 30;
+      digitalWrite(hvPin, LOW);
+      digitalWrite(LEDpin, LED);
+      nixie(value, roll);
+      millisTime = millis();
+      lastRotate = millisTime;
+    }
+  }
 
   if (mode == 2) // test
   {
@@ -221,7 +270,7 @@ void loop()
   {
     if (millisTime - lastRotate > waitTimeRotate)
     {
-      rotate(10, 40);
+      rotate3(10, 33);
       nixie(value, roll);
       lastRotate = millisTime;
     }
@@ -345,6 +394,94 @@ void rotate(int rotateCount, int rotateDelay)
     }
 }
 
+void rotate2(int rotateCount, int rotateDelay) // ke vsem cislum pricita
+{
+  int rotationValue = value;
+  for (int j = 0; j < rotateCount; j++)
+
+    for (int i = 0; i <= 9; i++)
+    {
+      if (rotationValue >= 900000)
+        rotationValue = rotationValue - 900000;
+      else
+        rotationValue = rotationValue + 100000;
+
+      if (rotationValue % 100000 >= 90000)
+        rotationValue = rotationValue - 90000;
+      else
+        rotationValue = rotationValue + 10000;
+      if (rotationValue % 10000 >= 9000)
+        rotationValue = rotationValue - 9000;
+      else
+        rotationValue = rotationValue + 1000;
+
+      if (rotationValue % 1000 >= 900)
+        rotationValue = rotationValue - 900;
+      else
+        rotationValue = rotationValue + 100;
+
+      if (rotationValue % 100 >= 90)
+        rotationValue = rotationValue - 90;
+      else
+        rotationValue = rotationValue + 10;
+      if (rotationValue % 10 >= 9)
+        rotationValue = rotationValue - 9;
+      else
+        rotationValue = rotationValue + 1;
+
+      nixie(rotationValue, 0);
+      delay(rotateDelay);
+    }
+}
+
+void rotate3(int rotateCount, int rotateDelay) // opozdeny zacatek pricitani u kazdeho dalsiho cisla - had
+{
+  int rotationValue = value;
+  int stepsCount = rotateCount * 10 + 40;
+  for (int i = 0; i < stepsCount; i++)
+  {
+
+    if (i >= 40 && stepsCount - i > 0)
+      if (rotationValue >= 900000)
+        rotationValue = rotationValue - 900000;
+      else
+        rotationValue = rotationValue + 100000;
+
+    if (i >= 32 && stepsCount - i > 8)
+      if (rotationValue % 100000 >= 90000)
+        rotationValue = rotationValue - 90000;
+      else
+        rotationValue = rotationValue + 10000;
+
+    if (i >= 24 && stepsCount - i > 16)
+      if (rotationValue % 10000 >= 9000)
+        rotationValue = rotationValue - 9000;
+      else
+        rotationValue = rotationValue + 1000;
+
+    if (i >= 16 && stepsCount - i > 24)
+      if (rotationValue % 1000 >= 900)
+        rotationValue = rotationValue - 900;
+      else
+        rotationValue = rotationValue + 100;
+
+    if (i >= 8 && stepsCount - i > 32)
+      if (rotationValue % 100 >= 90)
+        rotationValue = rotationValue - 90;
+      else
+        rotationValue = rotationValue + 10;
+
+    if (i >= 0 && stepsCount - i > 40)
+      if (rotationValue % 10 >= 9)
+        rotationValue = rotationValue - 9;
+      else
+        rotationValue = rotationValue + 1;
+
+    nixie(rotationValue, 0);
+    delay(rotateDelay);
+  }
+}
+
 void settingsPage()
 {
   WiFiClient client = server.available();
@@ -388,6 +525,30 @@ void settingsPage()
             {
               roll = 0;
               EEPROM.write(0, roll);
+              EEPROM.commit();
+            }
+            else if (header.indexOf("GET /led") >= 0)
+            {
+              LED = 1;
+              EEPROM.write(56, LED);
+              EEPROM.commit();
+            }
+            else if (header.indexOf("GET /noled") >= 0)
+            {
+              LED = 0;
+              EEPROM.write(56, LED);
+              EEPROM.commit();
+            }
+            else if (header.indexOf("GET /radar") >= 0)
+            {
+              radarEnabled = 1;
+              EEPROM.write(57, radarEnabled);
+              EEPROM.commit();
+            }
+            else if (header.indexOf("GET /noradar") >= 0)
+            {
+              radarEnabled = 0;
+              EEPROM.write(57, radarEnabled);
               EEPROM.commit();
             }
             else if (header.indexOf("GET /prodleva/2s") >= 0)
@@ -569,6 +730,22 @@ void settingsPage()
               client.println("<p><a href=\"/rollovat\"><button class=\"button\">Roll : OFF</button></a></p>");
             else
               client.println("<p><a href=\"/nerollovat\"><button class=\"button button2\">Roll : ON</button></a></p>");
+
+            if (LEDinstalled)
+            {
+              if (LED == 0)
+                client.println("<p><a href=\"/led\"><button class=\"button\">LED : OFF</button></a></p>");
+              else
+                client.println("<p><a href=\"/noled\"><button class=\"button button2\">LED : ON</button></a></p>");
+            }
+
+            if (radarInstalled)
+            {
+              if (radarEnabled == 0)
+                client.println("<p><a href=\"/radar\"><button class=\"button\">Motion Detection : OFF</button></a></p>");
+              else
+                client.println("<p><a href=\"/noradar\"><button class=\"button button2\">Motion Detection : ON</button></a></p>");
+            }
 
             client.println("<p><div class=\"dropdown\">  <button class=\"button button2\">Refresh Rate: ");
             client.print(setWaitTimeHTTP / 1000);
