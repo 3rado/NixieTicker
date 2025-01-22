@@ -1,5 +1,8 @@
 # NixieTicker
 NixieTicker is a cryptocurrency price indicator that runs on ESP32 and uses nixies to display the value. 
+
+[Ticker](img/ticker.jpg)
+
 ### Nixie tubes use high voltage. Be careful!
 
 ## Hardware requirements  
@@ -82,3 +85,6 @@ I use a 3.3V Microwave Radar Motion Detector Sensor (RCWL-0516) from eBay. It ca
 4) In folder src open file main.h and add your API key here: const char* youtubeApiKey = "YOUR API KEY"; 
 6) Connect your ESP and hit upload.
 7) Connect Ticker to your network: https://youtu.be/hoB8hveIu14
+
+[Ticker](img/ticker2.jpg)
+[Ticker](img/ticker3.jpg)
