@@ -4,12 +4,12 @@
 #include <stdint.h>
 #include <EEPROM.h>
 #include <YoutubeApi.h>
-// #include <api_key.h>
+#include <api_key.h>
 
 #define EEPROM_SIZE 58 // 0=roll, 1=nastavenaprodleva, 2=sourceState, 3=sat, 4=resetwifi, 5=mode(heal), 6-55 channel id, 56 LED, 57 radar
 
 // ADD YOUR YOUTUBE API KEY HERE
-const char *youtubeApiKey = "YOUR API KEY";
+// const char *youtubeApiKey = "YOUR API KEY";
 
 const char *yt_root_ca =
     "-----BEGIN CERTIFICATE-----\n"
