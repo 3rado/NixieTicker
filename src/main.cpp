@@ -4,12 +4,12 @@
 #include <stdint.h>
 #include <EEPROM.h>
 #include <YoutubeApi.h>
-#include <api_key.h>
+// #include <api_key.h>
 
 #define EEPROM_SIZE 58 // 0=roll, 1=nastavenaprodleva, 2=sourceState, 3=sat, 4=resetwifi, 5=mode(heal), 6-55 channel id, 56 LED, 57 radar
 
 // ADD YOUR YOUTUBE API KEY HERE
-//  const char* youtubeApiKey = "YOUR API KEY";
+const char *youtubeApiKey = "YOUR API KEY";
 
 const char *yt_root_ca =
     "-----BEGIN CERTIFICATE-----\n"
@@ -37,21 +37,22 @@ const char *yt_root_ca =
 WiFiServer server(80);
 
 bool radarInstalled = 1;
-bool LEDinstalled = 0;
+bool LEDinstalled = 1;
 
 int latchPin = 26;
 int clockPin = 25;
 int dataPin = 27;
 int hvPin = 33;
 int LEDpin = 32;
-int radarPin = 35;
+int radarPin = 14;
 int oldValue;
 int errorCount = 0; // if connection is lost, shows 000000-999999
 
 int timeoutTime = 2000;
-bool roll, sat, LED, radarEnabled = 1;
+bool roll, sat, radarEnabled = 1;
 bool detection = 0;
-byte mode = 0; // 0=normal, 1=heal;
+byte LEDSetting;
+int LED = -1, mode = 0; // 0=normal, 1=heal;
 String sourceState;
 String channel_ID;
 
@@ -59,7 +60,7 @@ String header;
 String body;
 
 uint32_t millisTime = 0, lastHTTP = 0, lastRotate = 0, lastDetected = 0, lastClient = 0;
-int waitTimeRotate = 120000, waitTimeHTTP, setWaitTimeHTTP, detectionTimeout = 180000, sleepRotations = 30;
+int waitTimeRotate = 120000, waitTimeHTTP, setWaitTimeHTTP, detectionTimeout = 30000, sleepRotations = 30, healState = 0;
 double value;
 
 int digits[10] = {0b0000000001,  // 0
@@ -79,6 +80,8 @@ void rotate2(int rotateCount, int rotateDelay);
 void rotate3(int rotateCount, int rotateDelay);
 void settingsPage(void);
 
+void LEDControl(byte LEDSetState);
+
 bool getBinanceBTC();
 bool getBinanceETH();
 bool getCoindeskBTC();
@@ -93,8 +96,10 @@ void setup()
   pinMode(latchPin, OUTPUT); // latch
   pinMode(clockPin, OUTPUT); // clk
   pinMode(hvPin, OUTPUT);    // HV enable, active LOW
-  pinMode(LEDpin, OUTPUT);   // LED
   pinMode(radarPin, INPUT);
+
+  ledcSetup(0, 5000, 8);
+  ledcAttachPin(LEDpin, 0);
 
   EEPROM.begin(EEPROM_SIZE);
   WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP
@@ -160,7 +165,6 @@ void setup()
 
   while (readChar != '\0')
   {
-    Serial.print("Reading ");
     readChar = EEPROM.read(EEPROMaddress);
     if (readChar != '\0')
     {
@@ -171,8 +175,9 @@ void setup()
 
   Serial.println(channel_ID);
 
-  LED = EEPROM.read(56);
-  LED = EEPROM.read(57);
+  LEDSetting = EEPROM.read(56);
+  LEDControl(LEDSetting);
+  radarEnabled = EEPROM.read(57);
 
   WiFiManager wm;
 
@@ -222,18 +227,16 @@ void setup()
 void loop()
 {
   settingsPage();
-  digitalWrite(LEDpin, LED);
 
   if (radarInstalled && radarEnabled)
   {
     if (digitalRead(radarPin) == 1)
     {
       lastDetected = millisTime;
-      Serial.println(lastDetected);
     }
     if (millisTime - lastDetected > detectionTimeout)
     {
-      digitalWrite(LEDpin, LOW);
+      LEDControl(0);
       while (digitalRead(radarPin) == 0)
       {
         if (sleepRotations > 0)
@@ -248,9 +251,9 @@ void loop()
         }
         settingsPage();
       }
-      sleepRotations = 30;
+      sleepRotations = 20;
+      LEDControl(LEDSetting);
       digitalWrite(hvPin, LOW);
-      digitalWrite(LEDpin, LED);
       nixie(value, roll);
       millisTime = millis();
       lastRotate = millisTime;
@@ -264,13 +267,19 @@ void loop()
   }
   else if (mode == 1) // heal
   {
-    rotate(1, 1000);
+    if (healState > 999999)
+    {
+      healState = 0;
+    }
+    nixie(healState, 0);
+    healState = healState + 111111;
+    delay(3000);
   }
   else // normal
   {
     if (millisTime - lastRotate > waitTimeRotate)
     {
-      rotate3(10, 33);
+      rotate3(10, 25);
       nixie(value, roll);
       lastRotate = millisTime;
     }
@@ -280,7 +289,6 @@ void loop()
       lastHTTP = millisTime;
       Serial.print("Wifi signal: ");
       Serial.println(WiFi.RSSI());
-      Serial.println("HTTP begin");
 
       bool returned = 1;
       if (sourceState == "Binance - BTC/USDT")
@@ -296,6 +304,7 @@ void loop()
 
       if (returned == 0)
       {
+        Serial.print("Value: ");
         Serial.println(value, 0);
         nixie(value, roll);
         waitTimeHTTP = setWaitTimeHTTP;
@@ -529,14 +538,23 @@ void settingsPage()
             }
             else if (header.indexOf("GET /led") >= 0)
             {
-              LED = 1;
-              EEPROM.write(56, LED);
+              LEDSetting = 255;
+              LEDControl(LEDSetting);
+              EEPROM.write(56, LEDSetting);
               EEPROM.commit();
             }
             else if (header.indexOf("GET /noled") >= 0)
             {
-              LED = 0;
-              EEPROM.write(56, LED);
+              LEDSetting = 0;
+              LEDControl(LEDSetting);
+              EEPROM.write(56, LEDSetting);
+              EEPROM.commit();
+            }
+            else if (header.indexOf("GET /dimled") >= 0)
+            {
+              LEDSetting = 80;
+              LEDControl(LEDSetting);
+              EEPROM.write(56, LEDSetting);
               EEPROM.commit();
             }
             else if (header.indexOf("GET /radar") >= 0)
@@ -548,6 +566,7 @@ void settingsPage()
             else if (header.indexOf("GET /noradar") >= 0)
             {
               radarEnabled = 0;
+              lastRotate = millis();
               EEPROM.write(57, radarEnabled);
               EEPROM.commit();
             }
@@ -610,6 +629,7 @@ void settingsPage()
             else if (header.indexOf("GET /block-height") >= 0)
             {
               sourceState = "Block Height";
+              setWaitTimeHTTP = 60000;
               EEPROM.write(2, 3);
               EEPROM.commit();
               Serial.println(sourceState);
@@ -735,8 +755,10 @@ void settingsPage()
             {
               if (LED == 0)
                 client.println("<p><a href=\"/led\"><button class=\"button\">LED : OFF</button></a></p>");
+              else if (LED > 0 && LED < 255)
+                client.println("<p><a href=\"/noled\"><button class=\"button button2\">LED : DIM</button></a></p>");
               else
-                client.println("<p><a href=\"/noled\"><button class=\"button button2\">LED : ON</button></a></p>");
+                client.println("<p><a href=\"/dimled\"><button class=\"button button2\">LED : ON</button></a></p>");
             }
 
             if (radarInstalled)
@@ -818,6 +840,7 @@ bool getBinanceBTC()
   HTTPClient http;
   http.begin("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
   int httpCode = http.GET();
+  Serial.print("HTTP Code: ");
   Serial.println(httpCode);
 
   if (httpCode == 200)
@@ -845,6 +868,7 @@ bool getBinanceETH()
   HTTPClient http;
   http.begin("https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT");
   int httpCode = http.GET();
+  Serial.print("HTTP Code: ");
   Serial.println(httpCode);
 
   if (httpCode == 200)
@@ -874,7 +898,6 @@ bool getCoindeskBTC()
   {
     String payload = http.getString();
     const size_t capacity = JSON_ARRAY_SIZE(1) + JSON_ARRAY_SIZE(3) + JSON_OBJECT_SIZE(1) + 2 * JSON_OBJECT_SIZE(2) + JSON_OBJECT_SIZE(3) + 2 * JSON_OBJECT_SIZE(6) + 2 * JSON_OBJECT_SIZE(7) + 590;
-    Serial.println(capacity);
     DynamicJsonDocument doc(capacity);
     const char *json = payload.c_str();
     deserializeJson(doc, json);
@@ -901,6 +924,7 @@ bool getBlockHeight()
   HTTPClient http;
   http.begin("https://mempool.space/api/blocks/tip/height");
   int httpCode = http.GET();
+  Serial.print("HTTP Code: ");
   Serial.println(httpCode);
 
   if (httpCode == 200)
@@ -933,5 +957,19 @@ bool getYoutubeSubs()
   {
     client.stop();
     return 1;
+  }
+}
+
+void LEDControl(byte LEDSetState)
+{
+  while (LEDSetState != LED)
+  {
+    if (LEDSetState > LED)
+      LED++;
+    else
+      LED--;
+
+    ledcWrite(0, LED);
+    delay(5);
   }
 }
