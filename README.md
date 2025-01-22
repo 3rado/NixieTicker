@@ -64,6 +64,7 @@ If you are not using the radar or backlight, set these variables accordingly.
 I use six blue LEDs. My LEDs draw 20mA each, so I have three LEDs in series with a 120Ω resistor. You can use any generic NPN transistor for switching.
 The positive lead of the LEDs is connected to the voltage regulator input on the Nixie board. The transistor's base is connected to D32. The ground ( emitor ) can be connected to either the ESP ground pin or the Nixie board ground, such as the voltage regulator ground.
 
+![SOP16 variant with soldered wires](img/led%20schematic.png)
 ![SOP16 variant with soldered wires](img/led.jpg)
 The green wire provides 12V for the LEDs, the black wire is ground.
 
